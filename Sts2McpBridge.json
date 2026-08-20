@@ -1,0 +1,12 @@
+{
+  "id": "Sts2McpBridge",
+  "name": "STS2 MCP Bridge",
+  "author": "STS2 MCP Bridge contributors",
+  "description": "Local-only MCP bridge for explicit Slay the Spire 2 actions.",
+  "version": "0.1.0",
+  "has_pck": false,
+  "has_dll": true,
+  "dependencies": [],
+  "affects_gameplay": true,
+  "min_game_version": "0.107.1"
+}
