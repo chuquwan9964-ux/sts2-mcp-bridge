@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Sts2McpBridge</AssemblyName>
+    <RootNamespace>Sts2McpBridge</RootNamespace>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src/Core/**/*.cs;src/Mod/**/*.cs" />
+    <Compile Remove="src/Server/**/*.cs;tests/**/*.cs" />
+    <Reference Include="sts2"><HintPath>$(Sts2ManagedDir)/sts2.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="GodotSharp"><HintPath>$(Sts2ManagedDir)/GodotSharp.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <Target Name="ValidateSts2ManagedDir" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(Sts2ManagedDir)' == ''" Text="Sts2ManagedDir is required. Pass -p:Sts2ManagedDir=/path/to/data_sts2_macos_arm64 or use scripts/build-install.sh." />
+    <Error Condition="'$(Sts2ManagedDir)' != '' and !Exists('$(Sts2ManagedDir)/sts2.dll')" Text="Sts2ManagedDir does not contain sts2.dll: $(Sts2ManagedDir)" />
+    <Error Condition="'$(Sts2ManagedDir)' != '' and !Exists('$(Sts2ManagedDir)/GodotSharp.dll')" Text="Sts2ManagedDir does not contain GodotSharp.dll: $(Sts2ManagedDir)" />
+  </Target>
+</Project>
