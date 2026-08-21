@@ -48,7 +48,7 @@ public sealed class HttpBridgeApi : IBridgeApi, IDisposable
     public void Dispose() => _client.Dispose();
 }
 
-public sealed class McpServer(IBridgeApi bridge)
+public sealed class McpServer(IBridgeApi bridge, KnowledgeStore? knowledge = null)
 {
     private static readonly JsonArray Tools = BuildTools();
 
@@ -96,10 +96,16 @@ public sealed class McpServer(IBridgeApi bridge)
             "sts2_pause" => await bridge.PauseAsync(true, cancellationToken),
             "sts2_resume" => await bridge.PauseAsync(false, cancellationToken),
             "sts2_get_history" => await bridge.GetHistoryAsync(OptionalInt(arguments, "limit", 50), cancellationToken),
+            "sts2_knowledge_manifest" => RequireKnowledge().Manifest(),
+            "sts2_knowledge_lookup" => RequireKnowledge().Lookup(RequiredString(arguments, "kind"), RequiredString(arguments, "id")),
+            "sts2_knowledge_search" => RequireKnowledge().Search(RequiredString(arguments, "query"), OptionalStrings(arguments, "kinds"), OptionalInt(arguments, "limit", 10)),
+            "sts2_knowledge_relevant" => RequireKnowledge().Relevant(RequiredStrings(arguments, "entity_ids")),
             _ => throw new RpcException(-32602, $"Unknown tool: {name}")
         };
         return ToolResult(value);
     }
+
+    private KnowledgeStore RequireKnowledge() => knowledge ?? throw new InvalidOperationException("Local STS2 knowledge is not configured.");
 
     private async Task<JsonNode?> WaitForChangeAsync(long version, int timeoutMs, CancellationToken cancellationToken)
     {
@@ -135,6 +141,8 @@ public sealed class McpServer(IBridgeApi bridge)
     private static long RequiredLong(JsonObject arguments, string name) => arguments[name]?.GetValue<long>() ?? throw new RpcException(-32602, $"{name} is required");
     private static string RequiredString(JsonObject arguments, string name) => arguments[name]?.GetValue<string>() ?? throw new RpcException(-32602, $"{name} is required");
     private static int OptionalInt(JsonObject arguments, string name, int fallback) => arguments[name]?.GetValue<int>() ?? fallback;
+    private static IReadOnlyList<string>? OptionalStrings(JsonObject arguments, string name) => arguments[name] is JsonArray values ? values.Select(value => value?.GetValue<string>() ?? string.Empty).Where(value => value.Length > 0).ToArray() : null;
+    private static IReadOnlyList<string> RequiredStrings(JsonObject arguments, string name) => OptionalStrings(arguments, name) is { Count: > 0 } values ? values : throw new RpcException(-32602, $"{name} is required");
     private static JsonObject Success(JsonNode? id, JsonNode result) => new() { ["jsonrpc"] = "2.0", ["id"] = id, ["result"] = result };
     private static JsonObject Error(JsonNode? id, int code, string message) => new() { ["jsonrpc"] = "2.0", ["id"] = id, ["error"] = new JsonObject { ["code"] = code, ["message"] = message } };
     private static string? StringValue(JsonNode? node) => node is JsonValue value && value.TryGetValue(out string? text) ? text : null;
@@ -154,7 +162,7 @@ public sealed class McpServer(IBridgeApi bridge)
             }
         };
         JsonObject version = new() { ["state_version"] = new JsonObject { ["type"] = "integer", ["description"] = "Exact observed state version." } };
-        return new(
+        JsonArray tools = new(
             Tool("sts2_get_state", "Get the latest structured STS2 observation and legal actions.", new()),
             Tool("sts2_get_legal_actions", "Get only the current state version and legal actions.", new()),
             Tool("sts2_execute_action", "Queue one exact legal action for main-thread execution.", new JsonObject { ["state_version"] = version["state_version"]!.DeepClone(), ["action_id"] = new JsonObject { ["type"] = "string" } }, "state_version", "action_id"),
@@ -162,6 +170,11 @@ public sealed class McpServer(IBridgeApi bridge)
             Tool("sts2_pause", "Pause bridge action execution and cancel any queued action.", new()),
             Tool("sts2_resume", "Resume bridge action execution.", new()),
             Tool("sts2_get_history", "Get recent queued and execution results.", new JsonObject { ["limit"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 200 } }));
+        tools.Add(Tool("sts2_knowledge_manifest", "Inspect the local noncommercial STS2 knowledge snapshot, coverage, source, and license metadata.", new()));
+        tools.Add(Tool("sts2_knowledge_lookup", "Look up exact static game knowledge. Use before deciding with an unfamiliar card, relic, potion, monster, event, encounter, or power. Current bridge state overrides static data.", new JsonObject { ["kind"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("cards", "relics", "potions", "characters", "monsters", "powers", "events", "encounters", "enchantments", "keywords", "intents", "orbs", "afflictions", "modifiers", "achievements", "epochs") }, ["id"] = new JsonObject { ["type"] = "string" } }, "kind", "id"));
+        tools.Add(Tool("sts2_knowledge_search", "Search the local static knowledge snapshot by Chinese/English text or ID. Do not guess exact effects when this tool can answer.", new JsonObject { ["query"] = new JsonObject { ["type"] = "string" }, ["kinds"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" } }, ["limit"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 50 } }, "query"));
+        tools.Add(Tool("sts2_knowledge_relevant", "Fetch static knowledge for the entity IDs present in the current bridge state. Call this for unfamiliar enemies, events, cards, relics, potions, or powers before planning.", new JsonObject { ["entity_ids"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["minItems"] = 1 } }, "entity_ids"));
+        return tools;
     }
 
     private sealed class RpcException(int code, string message) : Exception(message) { public int Code { get; } = code; }
