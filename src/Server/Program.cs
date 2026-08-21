@@ -5,10 +5,13 @@ int port = int.TryParse(Environment.GetEnvironmentVariable("STS2_MCP_PORT"), out
 bool daemon = args.Contains("--daemon", StringComparer.Ordinal);
 string token = TokenProvider.LoadOrCreate();
 BridgeStore store = new(token);
+string knowledgeRoot = Environment.GetEnvironmentVariable("STS2_KNOWLEDGE_DIR")
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "sts2-knowledge", "spire-codex", "zhs");
+KnowledgeStore knowledge = new(knowledgeRoot);
 await using HttpBridgeServer http = new(store, port);
 http.Start();
 using HttpBridgeApi bridge = new(new Uri($"http://127.0.0.1:{port}/"), token);
-McpServer mcp = new(bridge);
+McpServer mcp = new(bridge, knowledge);
 Console.Error.WriteLine($"STS2 MCP Bridge listening on 127.0.0.1:{port}; token source is configured.");
 
 using CancellationTokenSource lifetime = new();
