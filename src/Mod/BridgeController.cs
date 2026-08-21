@@ -268,7 +268,37 @@ public sealed class BridgeController : Node
         if (run.CurrentRoom?.RoomType == MegaCrit.Sts2.Core.Rooms.RoomType.Event)
         {
             List<NEventOptionButton> options = UiHelper.FindAll<NEventOptionButton>(room).Where(option => option.IsEnabled && !option.Option.IsLocked).ToList();
-            return new("run", "event", new { current_act = run.CurrentActIndex + 1, floor = run.TotalFloor }, options.Select((option, index) => new LegalAction($"event:{index}", "event_option", option.Option.Title.GetFormattedText())).ToList());
+            string? eventId = options.FirstOrDefault()?.Event.Id.Entry;
+            return new("run", "event", new
+            {
+                current_act = run.CurrentActIndex + 1,
+                floor = run.TotalFloor,
+                event_id = eventId,
+                related_entity_ids = options.SelectMany(option => new[]
+                    {
+                        eventId is null ? null : $"EVENT.{eventId}",
+                        option.Option.Relic is null ? null : $"RELIC.{option.Option.Relic.Id.Entry}"
+                    })
+                    .Where(id => id is not null)
+                    .Distinct()
+                    .ToList(),
+                instruction = "Before choosing an unfamiliar event option, query event_id and related_entity_ids with the knowledge tools. Exact option descriptions and live risk flags are authoritative.",
+                options = options.Select((button, index) => new
+                {
+                    action_id = $"event:{index}",
+                    text_key = button.Option.TextKey,
+                    title = SafeText(() => button.Option.Title.GetFormattedText()),
+                    description = SafeText(() => button.Option.Description.GetFormattedText()),
+                    is_proceed = button.Option.IsProceed,
+                    will_kill_player = button.Option.WillKillPlayer?.Invoke(player) ?? false,
+                    relic = button.Option.Relic is null ? null : new
+                    {
+                        id = $"RELIC.{button.Option.Relic.Id.Entry}",
+                        title = SafeText(() => button.Option.Relic.Title.GetFormattedText()),
+                        description = SafeText(() => button.Option.Relic.DynamicEventDescription.GetFormattedText())
+                    }
+                }).ToList()
+            }, options.Select((option, index) => new LegalAction($"event:{index}", "event_option", option.Option.Title.GetFormattedText())).ToList());
         }
         if (run.CurrentRoom?.RoomType == MegaCrit.Sts2.Core.Rooms.RoomType.RestSite)
         {
