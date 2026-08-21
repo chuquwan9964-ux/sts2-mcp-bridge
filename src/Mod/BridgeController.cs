@@ -36,6 +36,7 @@ using MegaCrit.Sts2.Core.Nodes.Screens.TreasureRoomRelic;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.TestSupport;
 using Sts2McpBridge.Core;
+using MegaCrit.Sts2.addons.mega_text;
 
 namespace Sts2McpBridge;
 
@@ -54,6 +55,7 @@ public sealed class BridgeController : Node
     private sealed record CombatBinding(LegalAction Action, CardModel? Card, PotionModel? Potion, Creature? Target);
     private sealed record MerchantBinding(LegalAction Action, NMerchantSlot Slot);
     private sealed record RewardBinding(LegalAction Action, NRewardButton Button);
+    private sealed record CardRewardAlternativeBinding(LegalAction Action, NCardRewardAlternativeButton Button);
 
     public BridgeController(BridgeConfig config)
     {
@@ -304,6 +306,20 @@ public sealed class BridgeController : Node
 
     private Draft BuildOverlay(Node overlay, RunState run)
     {
+        if (overlay is NCardRewardSelectionScreen)
+        {
+            List<NCardHolder> rewardHolders = UiHelper.FindAll<NCardHolder>(overlay).Where(holder => holder.IsVisibleInTree() && holder.CardModel is not null).ToList();
+            List<(CardModel Card, LegalAction Action)> rewardCards = StableCards(rewardHolders.Select(holder => holder.CardModel!), "choice");
+            List<CardRewardAlternativeBinding> alternatives = CardRewardAlternatives(overlay);
+            List<LegalAction> rewardActions = rewardCards.Select(card => card.Action).Concat(alternatives.Select(alternative => alternative.Action)).ToList();
+            return new("run", "card_reward_selection", new
+            {
+                floor = run.TotalFloor,
+                instruction = "Taking a card is optional. Choose an alternative such as Skip when no card clearly improves the deck.",
+                cards = rewardCards.Select(card => Card(card.Card, card.Action.ActionId, PileType.None)).ToList(),
+                alternatives = alternatives.Select(alternative => new { action_id = alternative.Action.ActionId, label = alternative.Action.Label }).ToList()
+            }, rewardActions);
+        }
         List<NCardHolder> holders = UiHelper.FindAll<NCardHolder>(overlay).Where(holder => holder.IsVisibleInTree() && holder.CardModel is not null).ToList();
         if (holders.Count > 0)
         {
@@ -471,6 +487,7 @@ public sealed class BridgeController : Node
             if (index >= 0) holders[index].EmitSignal(NCardHolder.SignalName.Pressed, holders[index]);
         }
         else if (action.Kind == "claim_reward") RewardBindings(overlay).SingleOrDefault(binding => binding.Action.ActionId == action.ActionId)?.Button.ForceClick();
+        else if (action.Kind == "card_reward_alternative") CardRewardAlternatives(overlay).SingleOrDefault(binding => binding.Action.ActionId == action.ActionId)?.Button.ForceClick();
         else if (action.Kind == "proceed") UiHelper.FindAll<NProceedButton>(overlay).FirstOrDefault(button => button.IsEnabled)?.ForceClick();
         await FrameAsync();
     }
@@ -577,6 +594,21 @@ public sealed class BridgeController : Node
     {
         Dictionary<string, int> occurrences = [];
         return UiHelper.FindAll<NRewardButton>(overlay).Where(button => button.IsEnabled && button.IsVisibleInTree()).Select(button => { string type = button.Reward?.GetType().Name ?? "UnknownReward"; int occurrence = occurrences.GetValueOrDefault(type); occurrences[type] = occurrence + 1; return new RewardBinding(new($"reward:{type}:{occurrence}", "claim_reward", $"Claim {type}"), button); }).ToList();
+    }
+
+    private static List<CardRewardAlternativeBinding> CardRewardAlternatives(Node overlay)
+    {
+        Dictionary<string, int> occurrences = [];
+        var result = new List<CardRewardAlternativeBinding>();
+        foreach (NCardRewardAlternativeButton button in UiHelper.FindAll<NCardRewardAlternativeButton>(overlay).Where(button => button.IsEnabled && button.IsVisibleInTree()))
+        {
+            string label = SafeText(() => button.GetNode<MegaLabel>("Label").Text) ?? "Alternative";
+            string normalized = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(label)))[..12];
+            int occurrence = occurrences.GetValueOrDefault(normalized);
+            occurrences[normalized] = occurrence + 1;
+            result.Add(new(new($"card_reward:alternative:{normalized}:{occurrence}", "card_reward_alternative", label), button));
+        }
+        return result;
     }
 
     private static List<MerchantBinding> MerchantBindings(IEnumerable<NMerchantSlot> slots)
