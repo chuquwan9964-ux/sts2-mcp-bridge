@@ -10,6 +10,7 @@ List<(string Name, Func<Task> Run)> tests =
     ("action id validation", ActionIdValidation),
     ("MCP tools list", McpToolsList),
     ("MCP tools call dispatch", McpToolDispatch),
+    ("knowledge lookup and completeness", KnowledgeLookup),
     ("JSON-RPC errors and ids", JsonRpcErrors),
     ("secret never appears in output", NoSecretOutput)
 ];
@@ -56,8 +57,9 @@ static async Task McpToolsList()
     string response = Required(await server.HandleLineAsync("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"));
     JsonNode root = JsonNode.Parse(response)!;
     JsonArray tools = root["result"]!["tools"]!.AsArray();
-    Assert(tools.Count == 7, $"expected 7 tools, got {tools.Count}");
+    Assert(tools.Count == 11, $"expected 11 tools, got {tools.Count}");
     Assert(tools.Any(tool => tool?["name"]?.GetValue<string>() == "sts2_execute_action"), "execute tool missing");
+    Assert(tools.Any(tool => tool?["name"]?.GetValue<string>() == "sts2_knowledge_lookup"), "knowledge lookup tool missing");
 }
 
 static async Task McpToolDispatch()
@@ -84,6 +86,27 @@ static async Task JsonRpcErrors()
     Assert(invalid["error"]?["code"]?.GetValue<int>() == -32600, "invalid request code mismatch");
     string? notification = await server.HandleLineAsync("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
     Assert(notification is null, "notification produced a response");
+}
+
+static async Task KnowledgeLookup()
+{
+    string root = Path.Combine(Path.GetTempPath(), "sts2-mcp-knowledge-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        await File.WriteAllTextAsync(Path.Combine(root, "monsters.json"), "[{\"id\":\"SLUDGE_SPINNER\",\"name\":\"Sludge Spinner\",\"attack_pattern\":{\"states\":[{\"type\":\"random\",\"branches\":[]}]}}]");
+        foreach (string kind in new[] { "cards", "relics", "potions", "characters", "powers", "events", "encounters", "enchantments", "keywords", "intents", "orbs", "afflictions", "modifiers", "achievements", "epochs" })
+            await File.WriteAllTextAsync(Path.Combine(root, kind + ".json"), "[]");
+        KnowledgeStore knowledge = new(root);
+        JsonNode result = knowledge.Lookup("monsters", "MONSTER.SLUDGE_SPINNER");
+        Assert(result["entity"]?["name"]?.GetValue<string>() == "Sludge Spinner", "knowledge lookup failed");
+        Assert(result["completeness"]?.GetValue<string>()?.Contains("unresolved", StringComparison.Ordinal) == true, "partial state machine was not marked");
+        McpServer server = new(new FakeBridgeApi(), knowledge);
+        string request = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"sts2_knowledge_lookup\",\"arguments\":{\"kind\":\"monsters\",\"id\":\"SLUDGE_SPINNER\"}}}";
+        string response = Required(await server.HandleLineAsync(request));
+        Assert(response.Contains("Sludge Spinner", StringComparison.Ordinal), "knowledge MCP output missing entity");
+    }
+    finally { Directory.Delete(root, true); }
 }
 
 static async Task NoSecretOutput()
