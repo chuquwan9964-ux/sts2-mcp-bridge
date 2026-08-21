@@ -84,6 +84,40 @@ startup_timeout_sec = 20
 tool_timeout_sec = 40
 ```
 
+## 本地知识库
+
+Bridge 仓库不包含第三方游戏数据。可按个人非商业用途下载 Spire Codex 的完整简体中文 JSON 快照：
+
+```sh
+chmod +x scripts/download-spire-codex-knowledge.sh
+./scripts/download-spire-codex-knowledge.sh
+```
+
+默认目录：
+
+```text
+~/.local/share/sts2-knowledge/spire-codex/zhs/
+```
+
+数据源为 <https://spire-codex.com/api/exports/zhs>，上游仓库为 <https://github.com/ptrlrd/spire-codex>，许可为 PolyForm Noncommercial License 1.0.0。数据只保存在本机，不会被构建脚本安装或提交到本仓库。自定义目录时给 Codex MCP 配置增加：
+
+```toml
+env = {
+  STS2_MCP_TOKEN_FILE = "/Users/your-name/.config/sts2-mcp-bridge/token",
+  STS2_MCP_PORT = "37845",
+  STS2_KNOWLEDGE_DIR = "/absolute/path/to/spire-codex/zhs"
+}
+```
+
+Knowledge MCP 工具：
+
+- `sts2_knowledge_manifest`：来源、许可证、覆盖数量和本地路径。
+- `sts2_knowledge_lookup`：按类型和 ID 精确查询卡牌、遗物、药水、怪物、事件、遭遇、能力等。
+- `sts2_knowledge_search`：按中英文文本或 ID 搜索。
+- `sts2_knowledge_relevant`：批量查询当前状态中的实体 ID。
+
+Codex 遇到新怪物、事件、卡牌、遗物或药水时应先查询相关知识。静态知识可能存在解析缺口；返回的 `completeness` 会标记不完整怪物状态机，实时游戏状态和 `NextMove` 永远优先。
+
 Codex MCP 配置不要加 `--daemon`；Codex 通过 stdio 持有 Server 生命周期。第一次使用工具时会创建 token 文件。随后启动游戏即可；Codex 可以通过合法主菜单动作继续旧 run，或依次打开 `Single Player`、标准模式并选择角色。不要同时手动启动第二个占用相同端口的服务器。
 
 可以直接对 Codex 下达：
@@ -101,6 +135,7 @@ Codex MCP 配置不要加 `--daemon`；Codex 通过 stdio 持有 Server 生命�
 - `sts2_pause`：暂停并取消尚未被 Mod 领取的动作。
 - `sts2_resume`：恢复动作领取。
 - `sts2_get_history`：读取最近的排队、执行、拒绝和取消记录。
+- `sts2_knowledge_manifest` / `lookup` / `search` / `relevant`：读取本机静态知识库。
 
 典型调用顺序是读取状态，选择 `legal_actions` 中的一个 ID，按原样提交该状态的版本和 ID，然后等待状态变化。服务器先验证版本和动作；Mod 领取后在 Godot 主线程重新构建实时状态，并再次验证完全相同的版本和 ID。过期、重复、未知或暂停状态下的动作都会被拒绝。断开服务器只会让 Mod 等待，绝不会自动结束回合。
 
