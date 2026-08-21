@@ -14,6 +14,7 @@ using MegaCrit.Sts2.Core.Entities.Merchant;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Entities.Potions;
 using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.MonsterMoves.Intents;
 using MegaCrit.Sts2.Core.Nodes;
@@ -239,6 +240,20 @@ public sealed class BridgeController : Node
     {
         if (NMapScreen.Instance?.IsOpen != true || !runNode.GlobalUi.MapScreen.IsVisibleInTree()) return null;
         List<NMapPoint> points = EnabledMapPoints(runNode);
+        if (points.Count == 0)
+        {
+            List<NMapPoint> all = UiHelper.FindAll<NMapPoint>(runNode.GlobalUi.MapScreen);
+            return new("run", "map_wait", new
+            {
+                current_act = run.CurrentActIndex + 1,
+                act_floor = run.ActFloor,
+                floor = run.TotalFloor,
+                current = run.CurrentMapCoord?.ToString(),
+                is_traveling = runNode.GlobalUi.MapScreen.IsTraveling,
+                is_travel_enabled = runNode.GlobalUi.MapScreen.IsTravelEnabled,
+                points = all.Select(point => new { row = point.Point.coord.row, column = point.Point.coord.col, type = point.Point.PointType.ToString(), state = point.State.ToString(), visible = point.IsVisibleInTree(), enabled = point.IsEnabled }).ToList()
+            }, []);
+        }
         return new("run", "map", new { current_act = run.CurrentActIndex + 1, act_floor = run.ActFloor, floor = run.TotalFloor, current = run.CurrentMapCoord?.ToString() },
             points.Select(point => new LegalAction($"map:r{point.Point.coord.row}:c{point.Point.coord.col}", "map_path", $"Choose {point.Point.PointType} at row {point.Point.coord.row}, column {point.Point.coord.col}")).ToList());
     }
@@ -523,7 +538,15 @@ public sealed class BridgeController : Node
 
     private sealed record PendingEnvelope(PendingAction? Action);
 
-    private static List<NMapPoint> EnabledMapPoints(NRun run) => UiHelper.FindAll<NMapPoint>(run.GlobalUi.MapScreen).Where(point => point.IsEnabled && point.IsVisibleInTree()).OrderBy(point => point.Point.coord.row).ThenBy(point => point.Point.coord.col).ToList();
+    private static List<NMapPoint> EnabledMapPoints(NRun run)
+    {
+        NMapScreen screen = run.GlobalUi.MapScreen;
+        return UiHelper.FindAll<NMapPoint>(screen)
+            .Where(point => point.IsVisibleInTree() && point.State == MapPointState.Travelable && screen.IsTravelEnabled && !screen.IsTraveling)
+            .OrderBy(point => point.Point.coord.row)
+            .ThenBy(point => point.Point.coord.col)
+            .ToList();
+    }
     private static bool CanUsePotion(Player player, PotionModel potion) => !potion.IsQueued && !potion.HasBeenRemovedFromState && player.Creature.IsAlive && player.CanRemovePotions && potion.PassesCustomUsabilityCheck && potion.Usage is PotionUsage.CombatOnly or PotionUsage.AnyTime;
     private static string CombatToken(Player player, ICombatState combat)
     {
