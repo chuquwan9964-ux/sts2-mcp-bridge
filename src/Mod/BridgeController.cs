@@ -274,6 +274,26 @@ public sealed class BridgeController : Node
                 current_act = run.CurrentActIndex + 1,
                 floor = run.TotalFloor,
                 event_id = eventId,
+                player = new
+                {
+                    hp = player.Creature.CurrentHp,
+                    max_hp = player.Creature.MaxHp,
+                    gold = player.Gold,
+                    deck = player.Deck.Cards.Select((card, index) => Card(card, $"deck{index}", PileType.Deck)).ToList(),
+                    relics = player.Relics.Select(relic => new
+                    {
+                        id = $"RELIC.{relic.Id.Entry}",
+                        title = SafeText(() => relic.Title.GetFormattedText()),
+                        description = SafeText(() => relic.DynamicDescription.GetFormattedText())
+                    }).ToList(),
+                    potions = player.PotionSlots.Select((potion, index) => potion is null ? null : new
+                    {
+                        slot = index,
+                        id = $"POTION.{potion.Id.Entry}",
+                        title = SafeText(() => potion.Title.GetFormattedText()),
+                        description = SafeText(() => potion.DynamicDescription.GetFormattedText())
+                    }).Where(potion => potion is not null).ToList()
+                },
                 related_entity_ids = options.SelectMany(option => new[]
                     {
                         eventId is null ? null : $"EVENT.{eventId}",
@@ -282,7 +302,7 @@ public sealed class BridgeController : Node
                     .Where(id => id is not null)
                     .Distinct()
                     .ToList(),
-                instruction = "Before choosing an unfamiliar event option, query event_id and related_entity_ids with the knowledge tools. Exact option descriptions and live risk flags are authoritative.",
+                instruction = "Before choosing an unfamiliar event option, query event_id and related_entity_ids with the knowledge tools. Exact option descriptions and live risk flags are authoritative. Decide autonomously when at least one nonlethal option has known effects; pause only when every option is unresolved or could immediately end the run.",
                 options = options.Select((button, index) => new
                 {
                     action_id = $"event:{index}",
